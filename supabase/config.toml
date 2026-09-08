@@ -1,0 +1,2 @@
+[functions.arasaac-proxy]
+verify_jwt = false
