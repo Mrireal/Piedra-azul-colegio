@@ -1,21 +1,21 @@
 import type { ArasaacPictogram } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const ARASAAC_API = 'https://api.arasaac.org/api';
 
-const functionUrl = `${SUPABASE_URL}/functions/v1/arasaac-proxy`;
-
-const headers: Record<string, string> = {
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-  'Content-Type': 'application/json',
-};
+interface ArasaacRawPictogram {
+  _id: number;
+  text?: string;
+  keywords?: Array<{ keyword: string }>;
+}
 
 export async function searchPictograms(searchText: string, language = 'es'): Promise<ArasaacPictogram[]> {
   const trimmed = searchText.trim();
   if (!trimmed) return [];
 
-  const url = `${functionUrl}/pictograms/${language}/search/${encodeURIComponent(trimmed)}`;
-  const response = await fetch(url, { headers });
+  const url = `${ARASAAC_API}/pictograms/${language}/search/${encodeURIComponent(trimmed)}`;
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json' },
+  });
 
   if (!response.ok) {
     throw new Error(`Error al buscar pictogramas: ${response.status}`);
@@ -24,9 +24,10 @@ export async function searchPictograms(searchText: string, language = 'es'): Pro
   const data = await response.json();
   if (!Array.isArray(data)) return [];
 
-  return data as ArasaacPictogram[];
-}
-
-export async function getPictogramImageUrl(id: number, thumbnail = false): Promise<string> {
-  return `${functionUrl}/pictograms/${id}${thumbnail ? '?thumbnail=true' : ''}`;
+  return (data as ArasaacRawPictogram[]).map((item) => ({
+    id: item._id,
+    text: item.text || (item.keywords && item.keywords.length > 0 ? item.keywords[0].keyword : ''),
+    imageUrl: `${ARASAAC_API}/pictograms/${item._id}?download=false`,
+    previewUrl: `${ARASAAC_API}/pictograms/${item._id}?download=false&thumbnail=true`,
+  }));
 }

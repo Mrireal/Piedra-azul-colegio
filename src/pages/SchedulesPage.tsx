@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, ArrowLeft, CalendarDays, Trash2, Loader2, Image as ImageIcon, Check, Clock } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import {
+  getSchedules, createSchedule, deleteSchedule,
+  getScheduleItems, addScheduleItem, deleteScheduleItem, toggleScheduleItemCompleted,
+} from '@/lib/repo';
 import type { Schedule, ScheduleItem, ArasaacPictogram } from '@/lib/types';
 import PictogramPicker from '@/components/PictogramPicker';
 import Modal from '@/components/Modal';
@@ -23,13 +26,11 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
 
   const loadSchedules = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('schedules')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setSchedules(data as Schedule[]);
+    try {
+      const data = await getSchedules();
+      setSchedules(data);
+    } catch (e) {
+      console.error('Error loading schedules:', e);
     }
     setLoading(false);
   }, []);
@@ -41,35 +42,29 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
   const handleCreate = async () => {
     if (!newName.trim()) return;
 
-    const { data, error } = await supabase
-      .from('schedules')
-      .insert({ name: newName.trim() })
-      .select()
-      .maybeSingle();
-
-    if (!error && data) {
+    try {
+      const schedule = await createSchedule({ name: newName.trim() });
       setShowCreate(false);
       setNewName('');
-      setSchedules([data as Schedule, ...schedules]);
-      onView((data as Schedule).id);
+      setSchedules([schedule, ...schedules]);
+      onView(schedule.id);
+    } catch (e) {
+      console.error('Error creating schedule:', e);
     }
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('schedules').delete().eq('id', id);
+    await deleteSchedule(id);
     setSchedules(schedules.filter((s) => s.id !== id));
   };
 
   const loadScheduleItems = useCallback(async (scheduleId: string) => {
     setItemsLoading(true);
-    const { data, error } = await supabase
-      .from('schedule_items')
-      .select('*')
-      .eq('schedule_id', scheduleId)
-      .order('position', { ascending: true });
-
-    if (!error && data) {
-      setScheduleItems(data as ScheduleItem[]);
+    try {
+      const data = await getScheduleItems(scheduleId);
+      setScheduleItems(data);
+    } catch (e) {
+      console.error('Error loading schedule items:', e);
     }
     setItemsLoading(false);
   }, []);
@@ -83,45 +78,38 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
     if (!selectedSchedule) return;
 
     const newPosition = scheduleItems.length;
-
-    const { data, error } = await supabase
-      .from('schedule_items')
-      .insert({
-        schedule_id: selectedSchedule.id,
-        pictogram_id: pictogram.id,
-        pictogram_text: pictogram.text,
-        pictogram_url: pictogram.previewUrl,
-        time_label: newTimeLabel || null,
+    try {
+      const item = await addScheduleItem({
+        scheduleId: selectedSchedule.id,
+        pictogramId: pictogram.id,
+        pictogramText: pictogram.text,
+        pictogramUrl: pictogram.previewUrl,
+        timeLabel: newTimeLabel || null,
         position: newPosition,
-      })
-      .select()
-      .maybeSingle();
-
-    if (!error && data) {
-      setScheduleItems([...scheduleItems, data as ScheduleItem]);
+      });
+      setScheduleItems([...scheduleItems, item]);
+    } catch (e) {
+      console.error('Error adding schedule item:', e);
     }
     setNewTimeLabel('');
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    await supabase.from('schedule_items').delete().eq('id', itemId);
+    await deleteScheduleItem(itemId);
     setScheduleItems(scheduleItems.filter((item) => item.id !== itemId));
   };
 
   const toggleCompleted = async (item: ScheduleItem) => {
-    const { error } = await supabase
-      .from('schedule_items')
-      .update({ completed: !item.completed })
-      .eq('id', item.id);
-
-    if (!error) {
+    try {
+      await toggleScheduleItemCompleted(item.id, !item.completed);
       setScheduleItems(
         scheduleItems.map((it) => (it.id === item.id ? { ...it, completed: !it.completed } : it))
       );
+    } catch (e) {
+      console.error('Error toggling item:', e);
     }
   };
 
-  // Schedule Detail View
   if (selectedSchedule) {
     return (
       <div className="min-h-screen pb-24 md:pb-8">
@@ -190,7 +178,6 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
                   }`}
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  {/* Time label */}
                   {item.time_label && (
                     <div className="flex-shrink-0 flex flex-col items-center justify-center w-20 h-20 rounded-2xl bg-accent-100 border-2 border-accent-200">
                       <Clock size={18} className="text-accent-600 mb-1" />
@@ -198,7 +185,6 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
                     </div>
                   )}
 
-                  {/* Pictogram */}
                   <div className="flex-shrink-0 w-20 h-20 rounded-2xl bg-white border-2 border-gray-100 overflow-hidden flex items-center justify-center">
                     <img
                       src={item.pictogram_url}
@@ -207,7 +193,6 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
                     />
                   </div>
 
-                  {/* Text */}
                   <div className="flex-1 min-w-0">
                     <span className={`font-primary font-bold text-lg capitalize ${item.completed ? 'text-success-700 line-through' : 'text-gray-800'}`}>
                       {item.pictogram_text}
@@ -217,7 +202,6 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
                     )}
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => toggleCompleted(item)}
@@ -248,7 +232,6 @@ export default function SchedulesPage({ onBack, onView }: SchedulesPageProps) {
     );
   }
 
-  // Schedule List View
   return (
     <div className="min-h-screen pb-24 md:pb-8">
       <div className="bg-gradient-to-r from-accent-400 to-accent-500 pt-8 pb-20 md:pt-12 md:pb-24">

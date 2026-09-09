@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, ArrowLeft, LayoutGrid, Trash2, Loader2, Image as ImageIcon, Volume2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { getBoards, createBoard, deleteBoard, getBoardItems, addBoardItem, deleteBoardItem } from '@/lib/repo';
 import type { Board, BoardItem, ArasaacPictogram } from '@/lib/types';
 import PictogramPicker from '@/components/PictogramPicker';
 import Modal from '@/components/Modal';
@@ -30,13 +30,11 @@ export default function BoardsPage({ onBack, onView }: BoardsPageProps) {
 
   const loadBoards = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('boards')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setBoards(data as Board[]);
+    try {
+      const data = await getBoards();
+      setBoards(data);
+    } catch (e) {
+      console.error('Error loading boards:', e);
     }
     setLoading(false);
   }, []);
@@ -48,36 +46,30 @@ export default function BoardsPage({ onBack, onView }: BoardsPageProps) {
   const handleCreate = async () => {
     if (!newName.trim()) return;
 
-    const { data, error } = await supabase
-      .from('boards')
-      .insert({ name: newName.trim(), color: newColor })
-      .select()
-      .maybeSingle();
-
-    if (!error && data) {
+    try {
+      const board = await createBoard({ name: newName.trim(), color: newColor });
       setShowCreate(false);
       setNewName('');
       setNewColor('sky');
-      setBoards([data as Board, ...boards]);
-      onView((data as Board).id);
+      setBoards([board, ...boards]);
+      onView(board.id);
+    } catch (e) {
+      console.error('Error creating board:', e);
     }
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('boards').delete().eq('id', id);
+    await deleteBoard(id);
     setBoards(boards.filter((b) => b.id !== id));
   };
 
   const loadBoardItems = useCallback(async (boardId: string) => {
     setItemsLoading(true);
-    const { data, error } = await supabase
-      .from('board_items')
-      .select('*')
-      .eq('board_id', boardId)
-      .order('position', { ascending: true });
-
-    if (!error && data) {
-      setBoardItems(data as BoardItem[]);
+    try {
+      const data = await getBoardItems(boardId);
+      setBoardItems(data);
+    } catch (e) {
+      console.error('Error loading board items:', e);
     }
     setItemsLoading(false);
   }, []);
@@ -91,26 +83,22 @@ export default function BoardsPage({ onBack, onView }: BoardsPageProps) {
     if (!selectedBoard) return;
 
     const newPosition = boardItems.length;
-
-    const { data, error } = await supabase
-      .from('board_items')
-      .insert({
-        board_id: selectedBoard.id,
-        pictogram_id: pictogram.id,
-        pictogram_text: pictogram.text,
-        pictogram_url: pictogram.previewUrl,
+    try {
+      const item = await addBoardItem({
+        boardId: selectedBoard.id,
+        pictogramId: pictogram.id,
+        pictogramText: pictogram.text,
+        pictogramUrl: pictogram.previewUrl,
         position: newPosition,
-      })
-      .select()
-      .maybeSingle();
-
-    if (!error && data) {
-      setBoardItems([...boardItems, data as BoardItem]);
+      });
+      setBoardItems([...boardItems, item]);
+    } catch (e) {
+      console.error('Error adding pictogram:', e);
     }
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    await supabase.from('board_items').delete().eq('id', itemId);
+    await deleteBoardItem(itemId);
     setBoardItems(boardItems.filter((item) => item.id !== itemId));
   };
 
@@ -127,7 +115,6 @@ export default function BoardsPage({ onBack, onView }: BoardsPageProps) {
     return boardColors.find((c) => c.name === colorName) || boardColors[0];
   };
 
-  // Board Detail View
   if (selectedBoard) {
     const colorInfo = getColorClasses(selectedBoard.color);
     return (
@@ -214,7 +201,6 @@ export default function BoardsPage({ onBack, onView }: BoardsPageProps) {
     );
   }
 
-  // Board List View
   return (
     <div className="min-h-screen pb-24 md:pb-8">
       <div className="bg-gradient-to-r from-success-400 to-success-600 pt-8 pb-20 md:pt-12 md:pb-24">

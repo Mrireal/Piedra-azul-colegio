@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, ArrowLeft, Users, Trash2, Loader2, Pencil, Save, X } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { getStudents, createStudent, updateStudent, deleteStudent } from '@/lib/repo';
 import type { Student } from '@/lib/types';
 import Modal from '@/components/Modal';
 
@@ -37,13 +37,11 @@ export default function StudentsPage({ onBack }: StudentsPageProps) {
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (!error && data) {
-      setStudents(data as Student[]);
+    try {
+      const data = await getStudents();
+      setStudents(data);
+    } catch (e) {
+      console.error('Error loading students:', e);
     }
     setLoading(false);
   }, []);
@@ -71,17 +69,13 @@ export default function StudentsPage({ onBack }: StudentsPageProps) {
   const handleSave = async () => {
     if (!name.trim()) return;
 
-    if (editing) {
-      const { error } = await supabase
-        .from('students')
-        .update({
+    try {
+      if (editing) {
+        await updateStudent(editing.id, {
           name: name.trim(),
           grade: grade.trim() || null,
           notes: notes.trim() || null,
-        })
-        .eq('id', editing.id);
-
-      if (!error) {
+        });
         setStudents(
           students.map((s) =>
             s.id === editing.id
@@ -89,28 +83,23 @@ export default function StudentsPage({ onBack }: StudentsPageProps) {
               : s
           )
         );
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('students')
-        .insert({
+      } else {
+        const student = await createStudent({
           name: name.trim(),
           grade: grade.trim() || null,
           notes: notes.trim() || null,
-        })
-        .select()
-        .maybeSingle();
-
-      if (!error && data) {
-        setStudents([...students, data as Student].sort((a, b) => a.name.localeCompare(b.name)));
+        });
+        setStudents([...students, student].sort((a, b) => a.name.localeCompare(b.name)));
       }
+    } catch (e) {
+      console.error('Error saving student:', e);
     }
 
     setShowModal(false);
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('students').delete().eq('id', id);
+    await deleteStudent(id);
     setStudents(students.filter((s) => s.id !== id));
   };
 
